@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Dosis y Vacunaciones</title>
+    <style>
+        /* Estilos aquí ... */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Registro de Dosis y Vacunaciones</h1>
+        
+        <div id="listaVacas">
+            <h2>Lista de Vacas</h2>
+            <ul id="vacasList"></ul>
+        </div>
+        
+        <div id="detalleVaca" style="display: none;">
+            <h2>Detalle de Vaca</h2>
+            <p><strong>ID:</strong> <span id="detalleId"></span></p>
+            <p><strong>Nombre:</strong> <span id="detalleNombre"></span></p>
+            <p><strong>Color:</strong> <span id="detalleColor"></span></p>
+            
+            <h3>Dosis y Vacunaciones</h3>
+            <table id="dosisTable">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Actividad</th>
+                        <th>Producto</th>
+                        <th>Dosis (ml)</th>
+                        <th>Días para la próxima dosis</th>
+                        <th>Observaciones</th>
+                    </tr>
+                </thead>
+                <tbody id="dosisTbody"></tbody>
+            </table>
+            
+            <button id="agregarDosisBtn">Agregar Dosis</button>
+            <button id="regresarBtn" style="display: none;">Regresar</button>
+            
+            <div id="formularioDosis" style="display: none;">
+                <h3>Agregar Dosis</h3>
+                <form id="formularioAgregarDosis">
+                    <label for="fecha">Fecha:</label>
+                    <input type="date" id="fecha" name="fecha" required>
+                    
+                    <label for="actividad">Actividad:</label>
+                    <input type="text" id="actividad" name="actividad" required>
+                    
+                    <label for="producto">Producto:</label>
+                    <input type="text" id="producto" name="producto" required>
+                    
+                    <label for="dosis">Dosis (ml):</label>
+                    <input type="number" id="dosis" name="dosis" required>
+                    
+                    <label for="diasProxima">Días para la próxima dosis:</label>
+                    <input type="number" id="diasProxima" name="diasProxima" required>
+                    
+                    <label for="observaciones">Observaciones:</label>
+                    <textarea id="observaciones" name="observaciones"></textarea>
+                    
+                    <button type="button" id="agregarDosisFormBtn">Agregar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var db;
+        var request = indexedDB.open("vacasDB", 1);
+
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            if (!db.objectStoreNames.contains("vacas")) {
+                var vacasObjectStore = db.createObjectStore("vacas", { keyPath: "id" });
+            }
+            if (!db.objectStoreNames.contains("dosis")) {
+                var dosisObjectStore = db.createObjectStore("dosis", { autoIncrement: true });
+                dosisObjectStore.createIndex("idVacaIndex", "idVaca", { unique: false });
+            }
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            cargarVacas();
+        };
+
+        request.onerror = function(event) {
+            console.error("Error al abrir la base de datos:", event.target.error);
+        };
+
+        var vacaSeleccionada;
+
+        function cargarVacas() {
+            var transaction = db.transaction(["vacas"], "readonly");
+            var objectStore = transaction.objectStore("vacas");
+            var vacasList = document.getElementById("vacasList");
+            vacasList.innerHTML = "";
+            objectStore.openCursor().onsuccess = function(event) {
+                var cursor = event.target.result;
+                if (cursor) {
+                    var li = document.createElement("li");
+                    li.innerHTML = `<strong>ID:</strong> ${cursor.key} - <strong>Nombre:</strong> ${cursor.value.nombre} - <strong>Color:</strong> ${cursor.value.color} <button onclick="verDetalle(${cursor.key})">Ver Detalle</button>`;
+                    vacasList.appendChild(li);
+                    cursor.continue();
+                }
+            };
+        }
+
+        function verDetalle(id) {
+            vacaSeleccionada = id;
+            var transaction = db.transaction(["vacas"], "readonly");
+            var objectStore = transaction.objectStore("vacas");
+            var request = objectStore.get(id);
+            request.onsuccess = function(event) {
+                var vaca = event.target.result;
+                if (vaca) {
+                    document.getElementById("detalleId").textContent = vaca.id;
+                    document.getElementById("detalleNombre").textContent = vaca.nombre;
+                    document.getElementById("detalleColor").textContent = vaca.color;
+
+                    cargarDosisVaca(vaca.id);
+
+                    document.getElementById("listaVacas").style.display = "none";
+                    document.getElementById("detalleVaca").style.display = "block";
+                    document.getElementById("regresarBtn").style.display = "inline-block";
+                }
+            };
+        }
+
+        document.getElementById("regresarBtn").addEventListener("click", function() {
+            document.getElementById("listaVacas").style.display = "block";
+            document.getElementById("detalleVaca").style.display = "none";
+            document.getElementById("regresarBtn").style.display = "none";
+        });
+
+        function cargarDosisVaca(idVaca) {
+            var transaction = db.transaction(["dosis"], "readonly");
+            var objectStore = transaction.objectStore("dosis");
+            var dosisTbody = document.getElementById("dosisTbody");
+            dosisTbody.innerHTML = "";
+            objectStore.index("idVacaIndex").openCursor(IDBKeyRange.only(idVaca)).onsuccess = function(event) {
+                var cursor = event.target.result;
+                if (cursor) {
+                    var tr = document.createElement("tr");
+                    var fechaDosis = new Date(cursor.value.fecha);
+                    var fechaProxima = new Date(fechaDosis);
+                    fechaProxima.setDate(fechaDosis.getDate() + cursor.value.diasProxima);
+                    var diasFaltantes = Math.floor((fechaProxima - new Date()) / (24 * 60 * 60 * 1000));
+                    tr.innerHTML = `<td>${cursor.value.fecha}</td>
+                                    <td>${cursor.value.actividad}</td>
+                                    <td>${cursor.value.producto}</td>
+                                    <td>${cursor.value.dosis}</td>
+                                    <td>${diasFaltantes} días</td>
+                                    <td>${cursor.value.observaciones}</td>`;
+                    dosisTbody.appendChild(tr);
+                    cursor.continue();
+                }
+            };
+        }
+
+        document.getElementById("agregarDosisBtn").addEventListener("click", function() {
+            document.getElementById("formularioDosis").style.display = "block";
+            document.getElementById("agregarDosisBtn").style.display = "none";
+        });
+
+        document.getElementById("agregarDosisFormBtn").addEventListener("click", function() {
+            agregarDosis();
+        });
+
+        function agregarDosis() {
+            var fecha = document.getElementById("fecha").value;
+            var actividad = document.getElementById("actividad").value;
+            var producto = document.getElementById("producto").value;
+            var dosis = parseFloat(document.getElementById("dosis").value);
+            var diasProxima = parseInt(document.getElementById("diasProxima").value);
+            var observaciones = document.getElementById("observaciones").value;
+
+            var transaction = db.transaction(["dosis"], "readwrite");
+            var objectStore = transaction.objectStore("dosis");
+            var dosisObj = {
+                idVaca: vacaSeleccionada,
+                fecha: fecha,
+                actividad: actividad,
+                producto: producto,
+                dosis: dosis,
+                diasProxima: diasProxima,
+                observaciones: observaciones
+            };
+
+            var request = objectStore.add(dosisObj);
+            request.onsuccess = function() {
+                cargarDosisVaca(vacaSeleccionada);
+                document.getElementById("formularioDosis").style.display = "none";
+                document.getElementById("agregarDosisBtn").style.display = "block";
+                document.getElementById("formularioAgregarDosis").reset();
+            };
+            request.onerror = function() {
+                alert("Error al agregar la dosis");
+            };
+        }
+    </script>
+</body>
+</html>
